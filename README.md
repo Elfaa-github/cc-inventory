@@ -4,10 +4,10 @@ Tugas individu Cloud Computing, Week 12: Design & AWS Setup.
 
 - **Use Case:** Inventory
 - **Track:** C (Serverless)
-- **Nama:** [Nama Lengkap]
-- **NIU:** [NIU]
+- **Nama:** Zahra Elfatima
+- **NIU:** 535709
 
-Proyek ini merupakan implementasi API CRUD sederhana untuk satu entity, yaitu **Item**, menggunakan arsitektur serverless di AWS Academy ACF Sandbox.
+Proyek ini merupakan implementasi API CRUD sederhana untuk satu entity yaitu **Item**, menggunakan arsitektur serverless di AWS Academy ACF Sandbox.
 
 Klien mengirimkan request melalui **Lambda Function URL**. Request tersebut diproses oleh fungsi **AWS Lambda**, sedangkan data Item disimpan dalam bentuk file JSON di **Amazon S3**.
 
@@ -29,7 +29,7 @@ items/{id}.json
 
 Seluruh resource dibuat di region **us-east-1** tanpa menggunakan VPC.
 
-Diagram arsitektur tersedia di folder `docs/`, yaitu `CC-PROYEK-INDIVIDU.drawio` beserta hasil ekspornya.
+Diagram arsitektur tersedia di folder `docs/`, yaitu `CC-PROYEK-INDIVIDU.png` beserta hasil ekspornya.
 
 ### Penggantian Layanan dari Contoh Track C
 
@@ -79,7 +79,7 @@ Berikut adalah struktur folder proyek:
 │   └── lambda_function.py     # Kode Lambda
 ├── docs/
 │   ├── design-brief.pdf       # Design brief
-│   └── CC-PROYEK-INDIVIDU.drawio  # Diagram arsitektur
+│   └── CC-PROYEK-INDIVIDU.png  # Diagram arsitektur
 │
 └── evidence/                  # Tangkapan layar bukti AWS
 ```
@@ -92,7 +92,7 @@ Deployment dilakukan melalui **AWS Academy ACF Sandbox**. Seluruh resource yang 
 
 ### 1. Memulai Lab
 
-- Buka AWS Academy dan jalankan lab ACF Sandbox hingga statusnya menunjukkan warna hijau.
+- Buka AWS Academy dan jalankan lab ACF Sandbox hingga statusnya menunjukkan dapat dimulai.
 - Buka AWS Console.
 - Pastikan region yang digunakan adalah **us-east-1**, karena Sandbox hanya mengizinkan penggunaan region tersebut.
 
@@ -160,10 +160,6 @@ Pengujian dilakukan menggunakan `curl` melalui AWS CloudShell. Contoh pengujian 
 - Klik **View CloudWatch logs**.
 - Buka log stream terbaru.
 - Periksa log yang menampilkan baris `START`, `END`, dan `REPORT`.
-
-### 9. Mengambil Bukti Implementasi
-
-Ambil tangkapan layar dari setiap tahapan deployment dan pengujian. Simpan seluruh bukti tersebut di folder `evidence/`.
 
 ## Contoh Pengujian API
 
