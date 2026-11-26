@@ -1,179 +1,235 @@
-# Inventory Serverless (Track C)
+# Inventory API (Track B: EC2, Docker, dan ECR)
 
-Tugas individu Cloud Computing, Week 12: Design & AWS Setup.
+Tugas individu Cloud Computing, Week 12: Design & AWS Setup (dilanjutkan pada Week 14: Final Submission).
 
 - **Use Case:** Inventory
-- **Track:** C (Serverless)
+- **Track:** B (EC2 + Docker + ECR)
 - **Nama:** Zahra Elfatima
 - **NIU:** 535709
 
-Proyek ini merupakan implementasi API CRUD sederhana untuk satu entity yaitu **Item**, menggunakan arsitektur serverless di AWS Academy ACF Sandbox.
-
-Klien mengirimkan request melalui **Lambda Function URL**. Request tersebut diproses oleh fungsi **AWS Lambda**, sedangkan data Item disimpan dalam bentuk file JSON di **Amazon S3**.
+Proyek ini merupakan API CRUD sederhana untuk satu entity, yaitu **Item**. Aplikasi dijalankan pada satu instance **Amazon EC2** menggunakan **Docker Compose** yang terdiri dari dua container, yaitu `inventory-api` (Flask dan gunicorn) dan `inventory-db` (MySQL 8.4). Image `inventory-api` dibangun menggunakan Dockerfile sendiri dan disimpan di **Amazon ECR**. Proyek ini dikerjakan menggunakan lab *Building Microservices and a CI/CD Pipeline with AWS* pada AWS Academy.
 
 ## Arsitektur
 
 ```text
 Klien (curl / browser)
-   |  HTTPS
+   |  HTTP, port 8080 (security group: hanya IP penguji)
    v
-Lambda Function URL (auth NONE)
-   |
-   v
-Lambda: inventory-handler (execution role: LabRole)
-   |                         |
-   v                         v
-Bucket S3                CloudWatch Logs
-items/{id}.json
++------------------- Amazon EC2 (Docker Compose) -------------------+
+|                                                                   |
+|   inventory-api (Flask + gunicorn, port 8080)                     |
+|        |  SQL melalui jaringan internal Docker                    |
+|        v                                                          |
+|   inventory-db (MySQL 8.4, port 3306 tidak dipublikasikan)        |
+|        |                                                          |
+|   Docker volume db_data                                           |
++-------------------------------------------------------------------+
+
+Image inventory-api: Dockerfile --build--> image --push--> Amazon ECR
 ```
 
-Seluruh resource dibuat di region **us-east-1** tanpa menggunakan VPC.
+Seluruh resource dibuat di region **us-east-1**. Diagram arsitektur tersedia di folder `docs/`, yaitu `architecture-diagram.png`.
 
-Diagram arsitektur tersedia di folder `docs/`, yaitu `CC-PROYEK-INDIVIDU.png` beserta hasil ekspornya.
+### Pembagian Layanan
 
-### Penggantian Layanan dari Contoh Track C
+Track B menggunakan dua layanan yang dijalankan dalam container Docker dan satu Docker image yang dibangun sendiri.
 
-Dua layanan yang digunakan dalam contoh Track C tidak dapat digunakan di AWS Academy Sandbox. Oleh karena itu, kedua layanan tersebut diganti dengan layanan lain yang memiliki fungsi serupa.
-
-| Layanan pada Contoh Track C | Layanan yang Digunakan | Alasan Penggantian |
+| Layanan | Image | Fungsi |
 |---|---|---|
-| API Gateway | Lambda Function URL | Pembuatan API melalui API Gateway ditolak oleh Sandbox. Lambda Function URL tetap menyediakan endpoint HTTPS yang dapat digunakan untuk mengakses Lambda. |
-| DynamoDB | Amazon S3 | Operasi `CreateTable` pada DynamoDB ditolak oleh Sandbox. S3 digunakan sebagai alternatif untuk menyimpan data Item, dengan setiap Item disimpan dalam satu file JSON. |
+| `inventory-api` | Dibangun sendiri dari `src/Dockerfile` dan disimpan di Amazon ECR | Menerima request HTTP, memeriksa input, dan menjalankan operasi CRUD. |
+| `inventory-db` | Image resmi `mysql:8.4` | Menyimpan data Item pada Docker volume `db_data` sehingga data tetap tersimpan setelah container dijalankan ulang. |
 
 ## Entity: Item
 
-Proyek ini menggunakan satu entity, yaitu `Item`, dengan atribut sebagai berikut.
+Proyek ini menggunakan satu entity, yaitu `Item`, yang disimpan pada tabel `items` di MySQL.
 
 | Atribut | Tipe Data | Aturan |
 |---|---|---|
-| `id` | Teks | Dibuat secara otomatis oleh server menggunakan UUID versi 4. |
-| `name` | Teks | Wajib diisi dan tidak boleh kosong. |
-| `category` | Teks | Wajib diisi dan tidak boleh kosong. |
+| `id` | Teks | Dibuat otomatis oleh server (UUID versi 4) dan tidak diisi oleh klien. |
+| `name` | Teks | Wajib diisi, tidak boleh kosong, maksimal 255 karakter. |
+| `category` | Teks | Wajib diisi, tidak boleh kosong, maksimal 255 karakter. |
 | `quantity` | Bilangan bulat | Wajib diisi dengan nilai minimal 0. |
-| `location` | Teks | Wajib diisi dan tidak boleh kosong. |
-| `updated_at` | Teks (waktu ISO, UTC) | Dibuat secara otomatis oleh server. |
+| `location` | Teks | Wajib diisi, tidak boleh kosong, maksimal 255 karakter. |
+| `updated_at` | Teks (waktu ISO, UTC) | Dibuat otomatis oleh server setiap data dibuat atau diubah. |
 
 ## Endpoint API
 
 API menyediakan empat operasi CRUD untuk mengelola data Item.
 
-| Aksi | Method dan Path | Respons Sukses | Respons Gagal |
-|---|---|---|---|
-| Create | `POST /items` | 201 | 400 (input tidak valid) |
-| Read | `GET /items/{id}` | 200 | 404 |
-| Update | `PUT /items/{id}` | 200 | 400, 404 |
-| Delete | `DELETE /items/{id}` | 200 | 404 |
+| Aksi | Method dan Path | Body | Respons Sukses | Respons Gagal |
+|---|---|---|---|---|
+| Create | `POST /items` | JSON: `name`, `category`, `quantity`, `location` | 201 dan Item yang dibuat | 400 |
+| Read | `GET /items/{id}` | Tidak ada | 200 dan Item | 400, 404 |
+| Update | `PUT /items/{id}` | JSON: `name`, `category`, `quantity`, `location` | 200 dan Item setelah diubah | 400, 404 |
+| Delete | `DELETE /items/{id}` | Tidak ada | 200 dan pesan `Item dihapus` | 400, 404 |
 
-Method lain pada path yang sudah dikenal akan menghasilkan respons `405 Method Not Allowed`, sedangkan path yang tidak dikenal akan menghasilkan respons `404 Not Found`.
+Aturan lainnya:
 
-Seluruh respons API menggunakan format JSON.
+1. `PUT` mengganti seluruh isi Item sehingga keempat field wajib dikirim ulang.
+2. ID yang mengandung karakter selain huruf, angka, dan tanda hubung, atau lebih dari 64 karakter, menghasilkan `400`.
+3. Method lain pada path yang sudah dikenal menghasilkan `405`, sedangkan path yang tidak dikenal menghasilkan `404`.
+4. Seluruh respons berupa JSON. Pesan galat berbentuk `{"error": "..."}`.
+5. Endpoint tambahan `GET /health` digunakan untuk memeriksa koneksi aplikasi ke database. Endpoint ini menghasilkan `200` jika database dapat diakses dan `503` jika tidak. Endpoint ini tidak termasuk empat endpoint CRUD.
 
 ## Struktur Repository
-
-Berikut adalah struktur folder proyek:
 
 ```text
 .
 ├── README.md
+├── docker-compose.yml          # Dua layanan: inventory-api dan inventory-db
+├── .env.example                # Contoh konfigurasi (file .env tidak ikut Git)
+├── .gitattributes
+├── .gitignore
 ├── src/
-│   └── lambda_function.py     # Kode Lambda
+│   ├── app.py                  # Aplikasi Flask (endpoint CRUD)
+│   ├── db.py                   # Koneksi dan pembuatan tabel MySQL
+│   ├── wsgi.py                 # Titik masuk gunicorn
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   └── .dockerignore
+├── scripts/
+│   └── smoke-test.sh           # Tes CRUD otomatis dengan curl
 ├── docs/
-│   ├── design-brief.pdf       # Design brief
-│   └── CC-PROYEK-INDIVIDU.png  # Diagram arsitektur
-│
-└── evidence/                  # Tangkapan layar bukti AWS
+│   ├── design-brief.pdf        # Design brief
+│   └── architecture-diagram.png
+├── evidence/                   # Tangkapan layar bukti AWS dan pengujian
+└── archive/
+    └── track-c/                # Pengerjaan Track C sebelumnya (arsip)
 ```
 
-Folder `src/` berisi kode fungsi Lambda, folder `docs/` berisi dokumen perancangan dan diagram arsitektur, sedangkan folder `evidence/` berisi tangkapan layar sebagai bukti implementasi dan pengujian di AWS.
+Folder `archive/track-c/` berisi pengerjaan awal menggunakan Track C di AWS Academy ACF Sandbox. Folder ini disimpan sebagai arsip dan tidak digunakan pada Track B.
 
 ## Deployment Plan
 
-Deployment dilakukan melalui **AWS Academy ACF Sandbox**. Seluruh resource yang dibuat akan terhapus ketika timer lab berakhir. Oleh karena itu, proses deployment dapat diulangi dari awal.
+Deployment dilakukan di lab *Building Microservices and a CI/CD Pipeline with AWS*. Perintah pada langkah 5 sampai 11 dijalankan di instance EC2. Ganti `<ACCOUNT_ID>` dengan Account ID AWS dan `<IP_PUBLIK_EC2>` dengan IP publik instance.
 
 ### 1. Memulai Lab
 
-- Buka AWS Academy dan jalankan lab ACF Sandbox hingga statusnya menunjukkan dapat dimulai.
-- Buka AWS Console.
-- Pastikan region yang digunakan adalah **us-east-1**, karena Sandbox hanya mengizinkan penggunaan region tersebut.
+- Buka AWS Academy dan jalankan lab hingga statusnya aktif.
+- Buka AWS Console dan pastikan region yang digunakan adalah **us-east-1**.
 
-### 2. Membuat Bucket S3
+### 2. Membuat Repository ECR
 
-- Buat bucket S3 dengan nama yang unik secara global.
-- Nama bucket harus menggunakan huruf kecil, angka, dan tanda hubung, dengan panjang 3–63 karakter.
-- Contoh nama bucket: `inventory-<nama>-<tanggal>`.
-- Pastikan opsi **Block all public access** tetap aktif agar bucket tidak dapat diakses secara publik.
+- Buka **Amazon ECR** dan pilih **Create repository**.
+- Isi nama repository dengan `inventory-api`.
+- Jika muncul galat izin saat membuat tag, buat repository tanpa tag.
 
-### 3. Membuat Fungsi Lambda
+### 3. Membuat Security Group
 
-- Pilih **Author from scratch**.
-- Isi nama fungsi dengan `inventory-handler`.
-- Pilih runtime Python. Pada pengujian proyek ini digunakan Python 3.13.
-- Pada bagian **Additional settings**, aktifkan **Custom execution role** atau pilih **Use an existing role**.
-- Pilih role **LabRole**.
+- Buat security group untuk instance EC2.
+- Tambahkan satu aturan inbound: **Custom TCP**, port **8080**, dengan sumber **IP penguji** dalam bentuk `/32`.
+- Port 3306 tidak dibuka.
 
-LabRole digunakan karena pengaturan IAM di Sandbox hanya dapat dibaca sehingga pembuatan role baru tidak dapat dilakukan.
+### 4. Membuat Instance EC2
 
-### 4. Memasang Kode Lambda
+- Jalankan instance EC2 dengan security group dari langkah 3.
+- Pastikan instance menggunakan role yang disediakan lab agar dapat login ke ECR.
+- Catat IP publik instance.
 
-- Buka fungsi Lambda yang telah dibuat.
-- Tempelkan isi file `src/lambda_function.py` ke editor kode pada AWS Console.
-- Pastikan handler menggunakan `lambda_function.lambda_handler`.
-- Klik **Deploy** untuk menerapkan perubahan kode.
+### 5. Memasang Docker dan Git
 
-### 5. Mengatur Environment Variable
-
-- Buka menu **Configuration > Environment variables**.
-- Tambahkan environment variable dengan konfigurasi berikut:
-
-| Key | Value |
-|---|---|
-| `BUCKET_NAME` | Nama bucket S3 yang telah dibuat |
-
-### 6. Membuat Lambda Function URL
-
-- Buka menu **Configuration > Function URL**.
-- Pilih **Create function URL**.
-- Atur authentication type menjadi **NONE**.
-- Buat Function URL dan salin alamat endpoint yang dihasilkan.
-
-Format Function URL:
-
-```text
-https://<url-id>.lambda-url.us-east-1.on.aws
+```bash
+sudo dnf install -y docker git
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
 ```
 
-AWS Console akan membuat resource-based policy secara otomatis. Untuk menggunakan authentication type `NONE`, policy harus mengizinkan kedua action berikut:
+Keluar dari sesi lalu masuk kembali agar perubahan grup berlaku. Periksa Docker Compose dengan perintah berikut.
 
-- `lambda:InvokeFunctionUrl`
-- `lambda:InvokeFunction`
+```bash
+docker compose version
+```
 
-Jika kedua izin tersebut tidak tersedia, pemanggilan Function URL akan menghasilkan respons `403 Forbidden`.
+Jika perintah tersebut belum tersedia, pasang plugin Compose.
 
-### 7. Melakukan Pengujian API
+```bash
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+```
 
-Pengujian dilakukan menggunakan `curl` melalui AWS CloudShell. Contoh pengujian tersedia pada bagian **Contoh Pengujian API** di bawah.
+### 6. Mengambil Kode dan Mengisi Konfigurasi
 
-### 8. Memeriksa CloudWatch Logs
+```bash
+git clone https://github.com/Elfaa-github/cc-inventory.git
+cd cc-inventory
+cp .env.example .env
+nano .env
+```
 
-- Buka fungsi Lambda.
-- Pilih tab **Monitor**.
-- Klik **View CloudWatch logs**.
-- Buka log stream terbaru.
-- Periksa log yang menampilkan baris `START`, `END`, dan `REPORT`.
+Pada file `.env`, ganti seluruh password dengan nilai yang kuat dan ganti `<ACCOUNT_ID>` pada `API_IMAGE` dengan Account ID AWS. File `.env` tidak boleh di-commit.
+
+| Variabel | Keterangan |
+|---|---|
+| `DB_NAME` | Nama database. |
+| `DB_USER` | User database untuk aplikasi. |
+| `DB_PASSWORD` | Password user database. |
+| `DB_ROOT_PASSWORD` | Password root MySQL. |
+| `API_IMAGE` | Nama image API, sesuai alamat repository ECR. |
+
+### 7. Login ke ECR
+
+```bash
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+```
+
+### 8. Membangun dan Mengunggah Image
+
+```bash
+docker compose build api
+docker compose push api
+```
+
+Setelah perintah selesai, image `inventory-api` akan tersedia di repository ECR.
+
+### 9. Menjalankan Aplikasi
+
+```bash
+docker compose up -d
+docker compose ps
+```
+
+Kedua container, yaitu `inventory-api` dan `inventory-db`, harus berstatus berjalan. Container `inventory-api` menunggu `inventory-db` dalam kondisi sehat terlebih dahulu sebelum dijalankan.
+
+### 10. Menguji API
+
+Jalankan tes otomatis dari komputer penguji.
+
+```bash
+./scripts/smoke-test.sh http://<IP_PUBLIK_EC2>:8080
+```
+
+Skrip ini memeriksa `/health`, Create, Read, Update, input tidak valid, Delete, dan Read setelah Delete. Skrip berhenti dengan kode 0 jika semua tes lolos. Pengujian manual tersedia pada bagian **Contoh Pengujian API**.
+
+### 11. Memeriksa Persistensi, Pemulihan, dan Log
+
+- **Persistensi data:** buat satu Item, jalankan `docker compose down` (tanpa opsi `-v`), lalu `docker compose up -d`. Ambil Item yang sama dengan `GET /items/{id}`; hasilnya harus `200`.
+- **Skenario gagal dan pulih:** jalankan `docker stop inventory-db`. Panggilan ke `/health` menghasilkan `503`. Jalankan `docker start inventory-db`, lalu `/health` kembali menghasilkan `200`.
+- **Log aplikasi:** jalankan `docker logs inventory-api --tail 50`.
+
+Perintah `docker compose down -v` menghapus volume `db_data` beserta seluruh data, sehingga tidak digunakan pada pengujian persistensi.
+
+### 12. Pembersihan Resource
+
+Lakukan langkah berikut sebelum pengumpulan.
+
+- Hapus file `.env` dari instance atau pastikan file tersebut tidak ada di repository.
+- Jalankan `docker compose down`.
+- Hentikan atau hapus instance EC2.
+- Hapus image di repository ECR jika sudah tidak diperlukan.
+- Pastikan tidak ada resource berbayar yang masih berjalan.
 
 ## Contoh Pengujian API
 
-Pengujian berikut menggunakan `curl` melalui AWS CloudShell.
-
-Sebelum menjalankan perintah, ganti nilai `URL` dengan alamat Lambda Function URL yang telah dibuat. Pastikan tidak ada garis miring (`/`) di bagian akhir URL.
+Ganti nilai `URL` dengan alamat instance EC2. Pastikan tidak ada garis miring (`/`) di bagian akhir.
 
 ```bash
-URL="https://<url-id>.lambda-url.us-east-1.on.aws"
+URL="http://<IP_PUBLIK_EC2>:8080"
 ```
 
 ### 1. Create Item (201 Created)
-
-Mengirimkan request untuk membuat Item baru.
 
 ```bash
 curl -i -X POST "$URL/items" -H "Content-Type: application/json" \
@@ -182,35 +238,31 @@ curl -i -X POST "$URL/items" -H "Content-Type: application/json" \
 
 ### 2. Read Item (200 OK)
 
-Mengambil data Item berdasarkan ID yang diperoleh dari respons Create.
-
 ```bash
 curl -i "$URL/items/ID"
 ```
 
-Ganti `ID` dengan ID Item yang dihasilkan saat proses Create.
+Ganti `ID` dengan ID Item yang dihasilkan saat Create.
 
 ### 3. Update Item (200 OK)
-
-Memperbarui data Item berdasarkan ID.
 
 ```bash
 curl -i -X PUT "$URL/items/ID" -H "Content-Type: application/json" \
   -d '{"name":"Contoh barang","category":"Contoh","quantity":7,"location":"Gudang A"}'
 ```
 
-### 4. Menguji Input Tidak Valid (400 Bad Request)
+### 4. Input Tidak Valid (400 Bad Request)
 
-Mengirimkan request Create tanpa atribut `category` untuk menguji validasi input.
+Request Create tanpa atribut `category`.
 
 ```bash
 curl -i -X POST "$URL/items" -H "Content-Type: application/json" \
   -d '{"name":"Contoh barang","quantity":1,"location":"Gudang A"}'
 ```
 
-### 5. Delete Item (200 OK)
+Respons yang diharapkan: `{"error": "Field 'category' wajib diisi (teks)"}`.
 
-Menghapus Item berdasarkan ID.
+### 5. Delete Item (200 OK)
 
 ```bash
 curl -i -X DELETE "$URL/items/ID"
@@ -218,41 +270,43 @@ curl -i -X DELETE "$URL/items/ID"
 
 ### 6. Read Item Setelah Dihapus (404 Not Found)
 
-Melakukan pengambilan data kembali untuk memastikan Item yang telah dihapus tidak dapat ditemukan.
-
 ```bash
 curl -i "$URL/items/ID"
 ```
 
 ## Keamanan
 
-Beberapa pengaturan keamanan yang diterapkan dalam proyek ini adalah:
-
-- **Lambda Function URL:** Menggunakan authentication type `NONE`, sehingga siapa pun yang mengetahui alamat endpoint dapat memanggil API. Pengaturan ini merupakan keputusan yang digunakan untuk keperluan pengujian. Risikonya dibatasi karena seluruh resource di Sandbox akan terhapus ketika timer lab berakhir.
-- **Amazon S3:** Bucket menggunakan pengaturan **Block Public Access** sehingga akses publik tetap diblokir.
-- **IAM Role:** Fungsi Lambda menggunakan `LabRole` karena pembuatan role baru tidak dapat dilakukan di Sandbox.
+- **Security group:** aturan inbound untuk aplikasi hanya TCP 8080 dari IP penguji (`/32`). Port 3306 tidak dibuka.
+- **Database:** port MySQL tidak dipublikasikan oleh Docker sehingga hanya container `inventory-api` yang dapat mengaksesnya melalui jaringan internal Docker.
+- **Rahasia:** password database disimpan di file `.env` yang diabaikan Git. Repository hanya berisi `.env.example`. Tidak ada access key AWS di repository.
+- **Izin AWS:** login dan push ke ECR menggunakan role yang disediakan lab. Role IAM baru tidak dibuat.
+- **Container:** aplikasi berjalan sebagai user non-root di dalam container.
 
 ## Keterbatasan
 
-Implementasi ini memiliki beberapa keterbatasan sebagai konsekuensi dari penggunaan layanan dan konfigurasi di AWS Academy Sandbox.
-
-1. **Pencarian data:** S3 tidak mendukung pencarian data berdasarkan isi file. Oleh karena itu, Item hanya dapat diambil berdasarkan `id`.
-2. **Daftar Item:** API tidak menyediakan endpoint untuk mengambil seluruh daftar Item. Endpoint yang tersedia hanya empat operasi sesuai ketentuan tugas.
-3. **Operasi Update dan Delete:** Kedua operasi memeriksa keberadaan Item terlebih dahulu sebelum melakukan penulisan atau penghapusan. Kedua langkah tersebut tidak berjalan secara atomik.
-4. **Autentikasi:** API belum menerapkan autentikasi sehingga siapa pun yang mengetahui alamat Function URL dapat mengakses endpoint.
+1. **Daftar Item:** API tidak menyediakan endpoint untuk mengambil seluruh Item. Endpoint CRUD yang tersedia hanya empat sesuai ketentuan tugas, sehingga Item hanya dapat diambil berdasarkan `id`.
+2. **Satu instance:** aplikasi dan database berjalan di satu instance EC2. Jika instance dihapus atau volume `db_data` dihapus, data ikut hilang.
+3. **Tanpa HTTPS dan autentikasi:** API diakses melalui HTTP dan belum memiliki autentikasi. Akses dibatasi melalui security group.
+4. **Resource lab:** seluruh resource berada di akun lab sehingga deployment harus dibuat ulang mengikuti langkah di atas jika lab di-reset.
 
 ## Bukti Implementasi AWS
 
-Folder `evidence/` berisi tangkapan layar yang menunjukkan proses konfigurasi, implementasi, dan pengujian proyek di AWS Academy ACF Sandbox.
+Folder `evidence/` berisi tangkapan layar bukti implementasi dan pengujian berikut.
 
-Bukti yang disertakan meliputi:
-
-1. Status lab ACF Sandbox yang aktif.
-2. Pesan kesalahan saat mencoba membuat resource DynamoDB dan API Gateway di Sandbox.
-3. Bucket S3 yang telah dibuat.
-4. Kode fungsi Lambda dan konfigurasi execution role `LabRole`.
-5. Environment variable `BUCKET_NAME`.
-6. Lambda Function URL dan resource-based policy.
-7. Hasil pengujian API menggunakan `curl`, meliputi respons `201`, `200`, `200`, `400`, `200`, dan `404`.
-8. File JSON Item yang tersimpan di bucket S3.
-9. Log eksekusi fungsi Lambda pada CloudWatch.
+| Berkas | Isi |
+|---|---|
+| `01-lab-aktif.png` | Status lab yang aktif. |
+| `02-ecr-repository.png` | Repository ECR `inventory-api`. |
+| `03-security-group.png` | Aturan inbound security group (TCP 8080 dari IP penguji). |
+| `04-ec2-instance.png` | Instance EC2 yang berjalan. |
+| `05-docker-compose-ps.png` | Dua container berjalan (`docker compose ps`). |
+| `06-ecr-image-pushed.png` | Image `inventory-api` di repository ECR. |
+| `07-post-201.png` | Hasil `POST /items` dengan status 201. |
+| `08-get-200.png` | Hasil `GET /items/{id}` dengan status 200. |
+| `09-put-200.png` | Hasil `PUT /items/{id}` dengan status 200. |
+| `10-delete-200.png` | Hasil `DELETE /items/{id}` dengan status 200. |
+| `11-get-404.png` | Hasil `GET /items/{id}` setelah dihapus dengan status 404. |
+| `12-input-salah-400.png` | Hasil `POST /items` tanpa `category` dengan status 400. |
+| `13-persistensi-setelah-restart.png` | Item masih ada setelah container dijalankan ulang. |
+| `14-recovery-db.png` | `/health` menghasilkan 503 saat database berhenti dan 200 setelah database dijalankan kembali. |
+| `15-docker-logs.png` | Log aplikasi dari `docker logs inventory-api`. |
