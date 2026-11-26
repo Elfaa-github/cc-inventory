@@ -10,7 +10,7 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD:?isi DB_PASSWORD di file .env}
     volumes:
       - db_data:/var/lib/mysql
-    # Port database sengaja TIDAK dipublikasikan: hanya container api yang bisa mengaksesnya.
+    
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 5s
