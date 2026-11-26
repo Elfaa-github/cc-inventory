@@ -10,24 +10,7 @@ Tugas individu Cloud Computing, Week 12: Design & AWS Setup (dilanjutkan pada We
 Proyek ini merupakan API CRUD sederhana untuk satu entity yaitu **Item**. Aplikasi berjalan di satu instance **Amazon EC2** (dibuat melalui **AWS Cloud9**) menggunakan **Docker Compose** dengan dua container, yaitu `inventory-api` (Flask dan gunicorn) dan `inventory-db` (MySQL 8.4). Image `inventory-api` dibangun sendiri dari Dockerfile di Cloud9 lalu disimpan di **Amazon ECR**. Pengerjaan dilakukan di lab *Building Microservices and a CI/CD Pipeline with AWS* pada AWS Academy.
 
 ## Arsitektur
-
-```text
-Klien (curl / browser)
-   |  HTTP, port 8080 (security group: hanya IP penguji)
-   v
-+------------------- Amazon EC2 (Docker Compose) -------------------+
-|                                                                   |
-|   inventory-api (Flask + gunicorn, port 8080)                     |
-|        |  SQL melalui jaringan internal Docker                    |
-|        v                                                          |
-|   inventory-db (MySQL 8.4, port 3306 tidak dipublikasikan)        |
-|        |                                                          |
-|   Docker volume db_data                                           |
-+-------------------------------------------------------------------+
-
-Alur image inventory-api:
-Cloud9 (build host) --docker build dan push--> Amazon ECR --pull--> Amazon EC2 (host)
-```
+![Diagram arsitektur](docs/architecture-diagram.png)
 
 Seluruh resource dibuat di region **us-east-1**. Diagram arsitektur tersedia di folder `docs/`, yaitu `architecture-diagram.png`. Instance EC2 host dibuat melalui Cloud9 karena peluncuran instance langsung dari halaman EC2 ditolak oleh lab (`ec2:RunInstances` tidak diizinkan).
 
