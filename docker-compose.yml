@@ -1,0 +1,39 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: inventory-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?isi DB_ROOT_PASSWORD di file .env}
+      MYSQL_DATABASE: ${DB_NAME:?isi DB_NAME di file .env}
+      MYSQL_USER: ${DB_USER:?isi DB_USER di file .env}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?isi DB_PASSWORD di file .env}
+    volumes:
+      - db_data:/var/lib/mysql
+    # Port database sengaja TIDAK dipublikasikan: hanya container api yang bisa mengaksesnya.
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  api:
+    build: ./src
+    image: ${API_IMAGE:-inventory-api:latest}
+    container_name: inventory-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:?isi DB_NAME di file .env}
+      DB_USER: ${DB_USER:?isi DB_USER di file .env}
+      DB_PASSWORD: ${DB_PASSWORD:?isi DB_PASSWORD di file .env}
+    ports:
+      - "8080:8080"
+
+volumes:
+  db_data:
